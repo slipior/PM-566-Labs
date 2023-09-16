@@ -1,7 +1,8 @@
 ---
-title: "Lab 3"
+title: "PM 560 Lab 3"
+author: "Sylwia Lipior"
 format: html
-    embed-resources: true
+embed-resources: true
 editor: visual
 ---
 
@@ -22,6 +23,7 @@ download.file(
     timeout  = 60 )
 
 met <- data.table::fread("met_all.gz")
+
 
 dim(met)
 head(met)
@@ -70,8 +72,6 @@ met <- met[temp>-15]
 met2 <- met[order(temp)]
 head(met2)
 
-
-
 ```
 
 6.  Calculate summary statistics
@@ -85,6 +85,14 @@ cor(elev$temp, elev$hour, use="complete")
 cor(elev$wind.sp, elev$day, use="complete")
 cor(elev$wind.sp, elev$hour, use="complete")
 cor(elev$temp, elev$day, use="complete")
+```
+
+```{r setup, include=FALSE}
+
+library(leaflet)
+leaflet()
+
+
 ```
 
 7.  Exploratory graphs
@@ -101,9 +109,19 @@ hist(met$temp)
 hist(met$wind.sp)
 
 library(leaflet)
+library(leaflet.extras)
+
 leaflet(elev) %>%
   addProviderTiles('OpenStreetMap') %>% 
-  addCircles(lat=~lat,lng=~lon, opacity=1, fillOpacity=1, radius=100)
+  addCircles(lat = ~lat, lng = ~lon, opacity = 1, fillOpacity = 1, radius = 100)
+
+  
+
+
+
+```
+
+```{r}
 
 library(lubridate)
 elev$date <- with(elev, ymd_h(paste(year, month, day, hour, sep= ' ')))
@@ -124,11 +142,12 @@ Assessing the correlation and the scatterplot, there doesn't seem to be a relati
 
 ```{r}
 
-summary(low_elev)
+
 
 cor(elev$temp, elev$wind.sp, use="complete")
 
 plot(elev$wind.sp, elev$temp)
+
 
 
 ```
