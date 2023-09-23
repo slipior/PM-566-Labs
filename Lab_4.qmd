@@ -1,0 +1,297 @@
+---
+title: "PM 560 Lab 4"
+author: "Sylwia Lipior"
+format: html
+embed-resources: true
+editor: visual
+---
+
+## 
+
+1.  **Read in the data**
+
+```{r}
+if (!file.exists("met_all.gz"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    destfile = "met_all.gz",
+    method   = "libcurl",
+    timeout  = 60
+    )
+met <- data.table::fread("met_all.gz")
+```
+
+2.  **Prepare the data**
+
+```{r}
+
+library(data.table)
+
+# Assuming you have a Date column in your data frame, replace 'DateColumn' with the actual column name# remove temperatures less than -17C
+met <- met[met$temp >= -17, ]
+
+library(dplyr)
+
+# Define the names of the columns you want to replace NAs in (variables of interest)
+in_names <- c("temp", "wind.sp", "elev", "dew.point", "atm.press")
+
+# Use mutate_at to replace NAs in the specified columns
+met <- met %>%
+  mutate_at(vars(all_of(in_names)), ~ifelse(. %in% c(9999, 999), NA, .))
+
+# Assuming you have 'year,' 'month,' and 'day' columns in your dataframe 'met'
+met$date <- as.Date(paste(met$year, met$month, met$day, sep = "-"))
+
+# Convert your data frame to a data.table
+setDT(met)
+
+# Filter for the first week of August (August 1st to August 7th)
+met <- met[date >= as.Date("2019-08-01") & date <= as.Date("2019-08-07")]
+
+library(data.table)
+
+# Convert your data frame 'met' to a data table
+met <- as.data.table(met)
+
+# Define the variables for which you want to calculate the mean
+vars <- c("temp", "rh", "wind.sp", "vis.dist", "dew.point", "lat", "lon", "elev")
+
+
+# Create an empty data table to store the results
+met_avg <- data.table(USAFID = integer(0))
+
+# Loop through each variable
+for (var in vars) {
+  # Calculate the mean by USAFID and store it in a data table
+  result <- met[, .(Mean = mean(get(var), na.rm = TRUE)), by = .(USAFID)]
+  # Rename the 'Mean' column to the variable name
+  setnames(result, "Mean", var)
+  # Join the result with the 'means' data table by 'USAFID'
+  met_avg <- met_avg[result, on = "USAFID"]
+}
+
+# The 'means' data table contains USAFID and Mean for each variable of interest
+
+# Assuming you have a data frame or data table named 'met' with 'lon' and 'lat' columns
+# Create a new column 'region' based on lon and lat values
+
+# Define the conditions for each region
+met_avg[, region := ifelse(lon <= -98 & lat >= 39.71, "NW",
+                      ifelse(lon > -98 & lat >= 39.71, "NE",
+                             ifelse(lon <= -98 & lat < 39.71, "SW", "SE")))]
+
+# Now, the 'region' column in your 'met' data frame or data table contains the region information
+
+met_avg[, elev_cat := fifelse(elev > 252, "high", "low")]
+
+
+```
+
+3.  **Use `geom_violin` to examine the wind speed and dew point by region**
+
+```{r}
+
+library(ggplot2)
+
+# Assuming you have a data frame named 'met' with 'wind.sp', 'dew.point', and 'region' columns
+
+region_colors <- c("NW" = "blue", "SW" = "green", "NE" = "red", "SE" = "purple")
+
+# Create a violin plot for wind speed and dew point by region
+ggplot(met_avg, aes(x = region, y = wind.sp, fill = region)) +
+  geom_violin(na.rm = TRUE) +  # Exclude NA values
+  labs(title = "Average Wind Speed by Region", y = "Wind Speed", x = "Region") +
+  scale_fill_manual(values = region_colors) +
+  facet_wrap(~region, scales = "free") +  # Facet by region with free scales
+  theme_minimal()
+
+ggplot(met_avg, aes(x = region, y = dew.point, fill = region)) +
+  geom_violin(na.rm = TRUE) +  # Exclude NA values
+  labs(title = "Average Dew Point by Region", y = "Dew Point", x="Region") +
+  scale_fill_manual(values = region_colors) +
+  facet_wrap(~region, scales = "free") +  # Facet by region with free scales
+  theme_minimal()
+
+
+
+
+```
+
+4.  **Use `geom_jitter` with `stat_smooth` to examine the association between dew point and wind speed by region**
+
+```{r}
+
+library(ggplot2)
+
+# Assuming you have a data frame named 'met' with 'wind.sp', 'dew.point', 'region' columns
+
+# Create a scatter plot with jittered points, color by region, and fit a linear regression line
+ggplot(met_avg, aes(x = dew.point, y = wind.sp, color = region)) +
+  geom_jitter(aes(fill = region), width = 0.2, height = 0, na.rm = TRUE) +  # Jittered points with color and NA handling
+  labs(title = "Association between Dew Point and Wind Speed by Region", x = "Dew Point", y = "Wind Speed") +
+  stat_smooth(method = "lm", formula = y ~ x, se = FALSE, na.rm = TRUE) +  # Fit linear regression line with NA handling
+  scale_color_manual(values = region_colors) +  # Apply custom colors
+  theme_minimal()
+
+```
+
+5.  **Use `geom_bar` to create barplots of the weather stations by elevation category colored by region**
+
+```{r}
+
+library(ggplot2)
+
+# Assuming you have a data frame named 'met' with 'elev_cat', 'region', and 'USAFID' columns
+
+met_avg_filtered <- met_avg %>%
+  filter(!is.na(elev_cat) & !is.na(region))
+
+# Create a barplot with bars by elevation category and colored by region
+ggplot(met_avg_filtered, aes(x = elev_cat, fill = region)) +
+  geom_bar(position = "dodge") +  # Bars by elevation category using dodge position
+  labs(title = "Weather Stations by Elevation and Region", x = "Elevation", y = "Number of Weather Stations") +
+  scale_fill_brewer(palette = "Set1") +  # Use Brewer color palette
+  theme_minimal()  # Apply a minimal theme
+
+```
+
+6.  **Use `stat_summary` to examine mean dew point and wind speed by region with standard deviation error bars**
+
+```{r}
+library(ggplot2)
+
+# First layer of stat_summary for mean and standard deviation
+plot <- ggplot(met_avg, aes(x = region)) +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),  # Set multiplier for standard deviation
+    aes(y = dew.point, fill = "Dew Point"),
+    geom = "bar",
+    width = 0.5,  # Adjust the width of bars
+    position = position_dodge(width = 0.9),  # Dodge the bars for clarity
+    na.rm = TRUE  # Remove NA values
+  ) +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),  # Set multiplier for standard deviation
+    aes(y = wind.sp, fill = "Wind Speed"),
+    geom = "bar",
+    width = 0.5,  # Adjust the width of bars
+    position = position_dodge(width = 0.9),  # Dodge the bars for clarity
+    na.rm = TRUE  # Remove NA values
+  ) +
+  labs(
+    title = "Mean Dew Point and Wind Speed by Region",
+    x = "Region",
+    y = "Value"
+  )
+
+# Second layer of stat_summary for error bars
+plot <- plot +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),  # Set multiplier for standard deviation
+    aes(y = dew.point, color = "Dew Point"),
+    geom = "errorbar",
+    width = 0.2,  # Adjust the width of error bars
+    position = position_dodge(width = 0.9),  # Dodge the error bars
+    na.rm = TRUE  # Remove NA values
+  ) +
+  stat_summary(
+    fun.data = "mean_sdl",
+    fun.args = list(mult = 1),  # Set multiplier for standard deviation
+    aes(y = wind.sp, color = "Wind Speed"),
+    geom = "errorbar",
+    width = 0.2,  # Adjust the width of error bars
+    position = position_dodge(width = 0.9),  # Dodge the error bars
+    na.rm = TRUE  # Remove NA values
+  )
+
+# Customize the appearance of the plot
+plot +
+  theme_minimal() +
+  scale_fill_manual(
+    values = c("Dew Point" = "blue", "Wind Speed" = "red"),
+    name = "Variables"
+  ) +
+  scale_color_manual(
+    values = c("Dew Point" = "blue", "Wind Speed" = "red"),
+    name = "Variables"
+  ) +
+  guides(
+    fill = guide_legend(title = NULL),
+    color = guide_legend(title = NULL)
+  )
+
+
+
+```
+
+7.  **Make a map showing the spatial trend in relative humidity in the US**
+
+```{r}
+library(leaflet)
+
+# Assuming you have a data frame named 'us_data' with 'lat', 'lon', and 'rh' columns
+# Remove NAs
+met_avg <- na.omit(met_avg)
+
+# Create a color palette with custom colors
+color_pal <- colorNumeric(
+  palette = c("blue", "green", "yellow", "red"),  # Define custom colors
+  domain = met_avg$rh  # Set the range of values
+)
+
+# Create a leaflet map
+map <- leaflet(data = met_avg) %>%
+  addProviderTiles("CartoDB.Positron") %>%  # Add a basemap (you can choose a different one)
+  addCircleMarkers(
+    lat = ~lat,
+    lng = ~lon,
+    radius = 5,
+    fillOpacity = 0.8,
+    color = ~color_pal(rh),  # Assign colors based on relative humidity values
+    popup = ~paste("Relative Humidity:", rh, "%"),  # Popup with relative humidity
+    label = ~paste("RH:", rh, "%"),  # Label with relative humidity
+  ) %>%
+  addLegend(
+    title = "Relative Humidity",
+    colors = c("blue", "green", "yellow", "red"),  # Custom colors
+    labels = c("0-25%", "25-50%", "50-75%", "75-100%"),  # Color labels
+    opacity = 1,
+    position = "bottomright"
+  )
+
+# Add markers for the top 10 places with the highest relative humidity
+top_10 <- met_avg[order(-met_avg$rh), ][1:10, ]
+map <- addMarkers(
+  map,
+  data = top_10,
+  lat = ~lat,
+  lng = ~lon,
+  label = ~paste("RH:", rh, "%"),
+  popup = ~paste("Relative Humidity:", rh, "%")
+)
+
+# Show the map
+map
+
+```
+
+8.  **Use a ggplot extension**
+
+```{r}
+
+library(ggplot2)
+library(ggrepel)
+
+# Assuming you have a data frame named 'met' with columns 'USAFID', 'temp', and 'wind.sp'
+
+ggplot(met_avg, aes(x = temp, y = wind.sp, label = USAFID)) +
+  geom_point() +  # Scatterplot
+  geom_text_repel(aes(label = ifelse(temp > 90 | wind.sp > 10, as.character(USAFID), "")), box.padding = 0.5) +  # Add data labels
+  labs(title = "Scatterplot of temp vs. wind.sp by USAFID", x = "Temperature (°C)", y = "Wind Speed (m/s)") +
+  theme_minimal()  # Apply a minimal theme
+
+
+```
