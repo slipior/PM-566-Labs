@@ -1,0 +1,233 @@
+---
+title: "Lab 6 - Text Mining"
+author: "Sylwia Lipior"
+format: html
+embed-resources: true
+editor: visual
+---
+
+# 
+
+```{r}
+library(readr)
+library(dplyr)
+mt_samples <- read_csv("https://raw.githubusercontent.com/USCbiostats/data-science-data/master/00_mtsamples/mtsamples.csv")
+mt_samples <- mt_samples %>%
+  select(description, medical_specialty, transcription)
+
+head(mt_samples)
+```
+
+## **Question 1: What specialties do we have?**
+
+```{r}
+mt_samples %>%
+  count(medical_specialty, sort = TRUE)
+
+```
+
+## **Question 2**
+
+```{r}
+# Load required libraries
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+
+# Tokenize words and count frequencies
+word_counts <- mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  count(word, sort = TRUE)
+
+# Visualize the top 20 most frequent words
+top_words <- head(word_counts, 20)
+
+# Create a bar plot
+ggplot(top_words, aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 20 Most Frequent Words", x = "Word", y = "Frequency") +
+  coord_flip() +
+  theme_minimal()
+
+```
+
+Interpretation: These are very common words in the English language and may not provide specific insights into the content of the transcriptions. Therefore, we need to be more specific if we want to make any meaningful insights about word frequency.
+
+## Question 3
+
+```{r}
+library(stringr)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+
+# Remove stopwords and numbers
+mt_samples_cleaned <- mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words) %>%
+  filter(!str_detect(word, "\\d+"))
+
+# Count the number of times each token appears
+word_counts <- mt_samples_cleaned %>%
+  count(word, sort = TRUE)
+
+# Visualize the top 20 most frequent words
+top_words <- word_counts %>%
+  slice_max(n = 20, order_by = n)
+
+# Assuming you have 'top_words' data frame with word frequencies
+
+ggplot(top_words, aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 20 Most Frequent Words (Removed Stopwords)", x = "Word", y = "Frequency") +
+  coord_flip() +
+  theme_minimal()
+
+
+```
+
+## Question 4
+
+```{r}
+library(tidytext)
+
+# Tokenizing into bi-grams
+bigrams <- mt_samples %>%
+  unnest_ngrams(ngram, transcription, n = 2)  # 2 for bi-grams
+
+# Counting the number of times each bi-gram appears
+bigram_counts <- bigrams %>%
+  count(ngram, sort = TRUE)
+
+# Visualizing top 20 bi-grams
+library(ggplot2)
+
+ggplot(bigram_counts[1:20,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Bi-grams in Medical Transcriptions", 
+       x = "Bi-grams", y = "Frequency")
+
+# Tokenizing into tri-grams
+trigrams <- mt_samples %>%
+  unnest_ngrams(ngram, transcription, n = 3)  # 3 for tri-grams
+
+# Counting the number of times each tri-gram appears
+trigram_counts <- trigrams %>%
+  count(ngram, sort = TRUE)
+
+# Visualizing top 20 tri-grams
+ggplot(trigram_counts[1:20,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Tri-grams in Medical Transcriptions", 
+       x = "Tri-grams", y = "Frequency")
+
+```
+
+Interpretation: The common bi-grams add a little more meaning, but since the second word is commonly a stopword/transcription word, there is a lot more meaning in the most frequent tri-grams. You start to get pretty close to meaningful phrases once you have tri-grams, and as expected, the phrases have a lot to do with patients, operations, medical history, and illness, since we are specifically looking at medical data.
+
+## Question 5: Extract words before and after "patient"
+
+```{r}
+
+library(tidytext)
+library(dplyr)
+
+# Extracting bigrams with "patient"
+patient_bigrams <- bigrams %>%
+  filter(grepl("patient", ngram))
+
+# Splitting the bigrams to extract words before and after "patient"
+words_around_patient <- patient_bigrams %>%
+  mutate(before_patient = ifelse(grepl("^\\w+ patient$", ngram), str_extract(ngram, "^\\w+"), NA),
+         after_patient = ifelse(grepl("^patient \\w+$", ngram), str_extract(ngram, "\\w+$"), NA)) 
+
+words_before_patient <- words_around_patient %>%
+  filter(!is.na(before_patient)) %>%
+  count(before_patient, sort = TRUE)
+
+head(words_before_patient)
+
+words_after_patient <- words_around_patient %>%
+  filter(!is.na(after_patient)) %>%
+  count(after_patient, sort = TRUE)
+
+head(words_after_patient)
+
+# Top 20 words preceding "patient"
+ggplot(words_before_patient[1:20,], aes(x = reorder(before_patient, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Words Preceding 'Patient'", 
+       x = "Words", y = "Frequency") +
+  theme_minimal()
+
+# Top 20 words trailing "patient"
+ggplot(words_after_patient[1:20,], aes(x = reorder(after_patient, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Words Trailing 'Patient'", 
+       x = "Words", y = "Frequency") +
+  theme_minimal()
+
+```
+
+Interpretation: It makes sense that the word most often preceding patient is the word "the". It's interesting that it seems that patient most often starts sentences, since there aren't many words that precede patient. It also makes sense that words like "was," "is," "has," and "tolerated" are the most frequency words that trail patient, in the context of medical records.
+
+## Question 6: Let's look at the top 5 words by medical specialty
+
+```{r}
+library(tidytext)
+library(dplyr)
+library(tidyr)
+
+# Tokenizing words and removing stopwords
+word_counts <- mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  anti_join(stop_words) %>%
+  filter(!str_detect(word, "^[0-9]+$")) %>%
+  group_by(medical_specialty) %>%
+  count(word, sort = TRUE)
+
+# Extracting the top 3 words for each specialty and reshaping the data
+top_words_per_specialty <- word_counts %>%
+  group_by(medical_specialty) %>%
+  slice_head(n = 5) %>%
+  mutate(rank = row_number()) %>%
+  pivot_wider(
+    names_from = rank, 
+    values_from = c(word, n),
+    names_glue = "{.value}{.name}"
+  )
+
+# Rename columns
+names(top_words_per_specialty) <- gsub("wordword", "word", names(top_words_per_specialty))
+names(top_words_per_specialty) <- gsub("nn", "n", names(top_words_per_specialty))
+
+# Viewing the result
+top_words_per_specialty
+
+
+```
+
+Interpretation: The most common words vary by medical specialty, but most of them share the word patient in the top 5. It's interesting that in dermatology, the most common words after patient are skin and cm. In Diets, the most common words are weight and carbohydrate. Neurosurgery's most used words include c5 and c6. Therefore, as expected, the most common words are specialty specific words.
+
+## Question 7
+
+```{r}
+word_usage <- mt_samples %>%
+  unnest_tokens(word, transcription) %>%
+  filter(word == "infection") %>%
+  count(medical_specialty, sort = TRUE)
+
+# Visualizing word usage across specialties
+ggplot(word_usage, aes(x = reorder(medical_specialty, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Usage of the word 'infection' across specialties", x = "Medical Specialty", y = "Frequency") +
+  theme_minimal()
+
+```
+
+Interpretation: Infection is a medically relevant word, so I decided to look at it's frequency across specialties. It's interesting the infection is most commonly used in surgery, consult, and orthopedic and least commonly used in hospice, bariatrics, and allergy/immunology.
