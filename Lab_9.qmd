@@ -1,0 +1,145 @@
+---
+title: "Lab 9"
+author: "Sylwia Lipior"
+format: html
+embed-resources: true
+editor: visual
+---
+
+## **Problem 1: Vectorization**
+
+```{r}
+
+
+fun1 <- function(n = 100, k = 4, lambda = 4) {
+  x <- NULL
+  
+  for (i in 1:n){
+    x <- rbind(x, rpois(k, lambda))    
+  }
+  
+  return(x)
+}
+
+fun1alt <- function(n = 100, k = 4, lambda = 4) {
+  matrix(rpois(n * k, lambda), n, k)
+}
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Parameters
+n <- 1000
+k <- 4
+lambda <- 4
+
+# Generate data using fun1
+data_fun1 <- fun1(n, k, lambda)
+
+# Generate data using fun1alt
+data_fun1alt <- fun1alt(n, k, lambda)
+
+# Check if dimensions are the same
+dimensions_equal <- all(dim(data_fun1) == dim(data_fun1alt))
+
+# Check if distributions are similar
+similar_distributions <- all(
+  abs(mean(data_fun1) - mean(data_fun1alt)) < 0.1 &&
+  abs(sd(data_fun1) - sd(data_fun1alt)) < 0.1
+)
+
+if (dimensions_equal && similar_distributions) {
+  cat("Both functions produced matrices with the same dimensions and similar distributions.\n")
+} else {
+  cat("There is a difference in dimensions or distributions between the two matrices.\n")
+}
+
+
+# Benchmarking
+microbenchmark::microbenchmark(
+  fun1(),
+  fun1alt()
+)
+
+```
+
+Problem 2
+
+```{r}
+
+# Data Generating Process (10 x 10,000 matrix)
+set.seed(1234)
+x <- matrix(rnorm(1e4), nrow=10)
+
+# Find each column's max value
+fun2 <- function(x) {
+  apply(x, 2, max)
+}
+
+fun2alt <- function(x) {
+  max.col(x, "first")
+}
+
+
+# Check speed
+library(microbenchmark)
+microbenchmark(
+  fun2(x),
+  fun2alt(x),
+  times = 100
+)
+
+```
+
+## **Problem 3: Parallelization**
+
+```{r}
+
+library(parallel)
+
+my_boot <- function(dat, stat, R, ncpus = 1L) {
+  
+  # Getting the random indices
+  n <- nrow(dat)
+  idx <- matrix(sample.int(n, n*R, TRUE), nrow=n, ncol=R)
+  
+  # Parallelize the loop using mclapply
+  ans <- mclapply(seq_len(R), function(i) {
+    stat(dat[idx[, i], , drop = FALSE])
+  }, mc.cores = ncpus)
+  
+  # Converting the list into a matrix
+  ans <- do.call(rbind, ans)
+
+  return(ans)
+}
+
+
+# Bootstrap of an OLS
+my_stat <- function(d) coef(lm(y ~ x, data=d))
+
+# DATA SIM
+set.seed(1)
+n <- 500; R <- 1e4
+
+x <- cbind(rnorm(n)); y <- x*5 + rnorm(n)
+
+# Checking if we get something similar as lm
+ans0 <- confint(lm(y~x))
+ans1 <- my_boot(dat = data.frame(x, y), my_stat, R = R, ncpus = 2L)
+
+
+# Measure execution time with 1 CPU core
+time1 <- system.time(my_boot(dat = data.frame(x, y), my_stat, R = 4000, ncpus = 1L))
+
+# Measure execution time with 2 CPU cores
+time2 <- system.time(my_boot(dat = data.frame(x, y), my_stat, R = 4000, ncpus = 2L))
+
+# Print the execution times
+print("Time with 1 CPU core:")
+print(time1)
+
+print("Time with 2 CPU cores:")
+print(time2)
+
+```
