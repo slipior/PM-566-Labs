@@ -1,0 +1,149 @@
+---
+title: "Assignment 3"
+author: "Sylwia Lipior"
+format: html
+embed-resources: true
+editor: visual
+---
+
+## Setting up
+
+```{r}
+# Load the packages
+library(tm)
+library(dplyr)
+library(tidytext)
+library(readr)
+library(purrr)
+
+# Read the data
+pubmed_data <- read_csv("pubmed.csv")
+
+```
+
+### 1. Tokenize the abstracts
+
+```{r}
+
+clean_and_tokenize <- function(text) {
+  text <- tolower(text)
+  text <- removePunctuation(text)
+  text <- removeNumbers(text)
+  text <- removeWords(text, stopwords("en"))
+  text <- stripWhitespace(text)
+  text <- unlist(strsplit(text, "\\s+"))
+  text <- text[text != ""]
+  
+  return(text)
+}
+
+# Apply the tokenization function to the abstracts
+pubmed_data <- pubmed_data %>%
+  mutate(tokens = map(abstract, clean_and_tokenize)) # use map instead of map_chr
+
+# Create a function to count tokens
+count_tokens <- function(tokens) {
+  tokens %>% table() %>% as.data.frame() %>% arrange(desc(Freq))
+}
+
+# Count tokens for each search term
+term_counts <- pubmed_data %>%
+  group_by(term) %>%
+  summarise(tokens = list(unlist(tokens))) %>%
+  rowwise() %>%
+  mutate(token_counts = list(count_tokens(tokens)))
+
+# Initialize a column to store top tokens
+term_counts$top_tokens <- vector("list", nrow(term_counts))
+
+# Initialize a column to store top tokens
+term_counts$top_tokens <- vector("list", nrow(term_counts))
+
+# Initialize a column to store top tokens
+term_counts$top_tokens <- vector("list", nrow(term_counts))
+
+# Define a function to get top tokens
+get_top_tokens <- function(token_counts_df) {
+  sorted_df <- token_counts_df[order(-token_counts_df$Freq), ]
+  top_tokens <- head(sorted_df$`.` , 5)
+  return(as.character(top_tokens))
+}
+
+# Apply the function to each token_counts entry
+term_counts$top_tokens <- lapply(term_counts$token_counts, get_top_tokens)
+
+# Convert the list column to a character column
+term_counts$top_tokens <- sapply(term_counts$top_tokens, paste, collapse=", ")
+
+# View the results
+term_counts %>%
+  select(term, top_tokens)
+
+
+```
+
+### 2. Bigrams
+
+```{r}
+# Required libraries
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+
+# Tokenize into bigrams
+bigrams <- pubmed_data %>%
+  unnest_tokens(bigram, abstract, token = "ngrams", n = 2)
+
+# Count bigrams
+bigram_counts <- bigrams %>%
+  count(bigram, sort = TRUE)
+
+# Get the top 10 bigrams
+top_bigrams <- head(bigram_counts, 10)
+
+# Plot using ggplot2
+ggplot(top_bigrams, aes(x = reorder(bigram, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top 10 Bigrams in Abstracts",
+       x = "Bigrams",
+       y = "Frequency")
+
+```
+
+### 3. Calculate the TF-IDF value for each word-search term combination
+
+```{r}
+library(dplyr)
+library(tidytext)
+
+# 1. Term Frequency
+tf <- pubmed_data %>%
+  unnest_tokens(word, abstract) %>%
+  group_by(term, word) %>%
+  tally() %>%
+  rename(tf = n)
+
+# 2. Inverse Document Frequency
+idf <- pubmed_data %>%
+  unnest_tokens(word, abstract) %>%
+  group_by(word) %>%
+  summarise(docs_with_word = n_distinct(term)) %>%
+  mutate(idf = log(n_distinct(pubmed_data$term) / docs_with_word))
+
+# 3. TF-IDF value
+tf_idf <- left_join(tf, idf, by = "word") %>%
+  mutate(tf_idf = tf * idf) %>%
+  arrange(term, desc(tf_idf))
+
+# 4. Top 5 tokens for each search term
+top_tokens_tf_idf <- tf_idf %>%
+  group_by(term) %>%
+  top_n(5, tf_idf) %>%
+  select(term, word, tf_idf)
+
+print(top_tokens_tf_idf)
+
+```
+
+The results are slightly different because in the question 1 results had the word patients, disease, and cases for "covid". For cystic fibrosis in question 1 the different words were patients and disease. For meningitis: patients cases, and clinical. For preeclampsia: women and risk. For prostate cancer: patients, treatment, cancer, disease, and prostate. Noticeably, the words pertaining to patients appeared in the results to question 1 but not question 3.
